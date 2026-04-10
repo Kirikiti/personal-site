@@ -78,11 +78,7 @@
       color: #4b5563;
       margin-bottom: 0.15rem;
     }
-    .field label {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
+
     .field input,
     .field textarea,
     .field select {
@@ -93,14 +89,21 @@
       font-size: 0.9rem;
       box-sizing: border-box;
     }
+
+    input[type="checkbox"] {
+      width: auto !important;
+      margin-left: 0;
+    }
     .field textarea {
       min-height: 80px;
       resize: vertical;
     }
+
     .contacts-list {
       max-height: 70vh;
       overflow-y: auto;
     }
+
     .contact-item {
       padding: 0.5rem 0.4rem;
       border-bottom: 1px solid #e5e7eb;
@@ -116,6 +119,7 @@
       opacity: 0.5;
       border-left: 4px solid #9ca3af;
     }
+
     .contact-title {
       font-weight: 600;
       font-size: 0.9rem;
@@ -136,6 +140,7 @@
       margin-right: 0.25rem;
       margin-top: 0.15rem;
     }
+
     .top-row {
       display: flex;
       gap: 0.5rem;
@@ -145,10 +150,12 @@
     .top-row input {
       flex: 1;
     }
+
     .muted {
       font-size: 0.8rem;
       color: #6b7280;
     }
+
     .badge {
       display: inline-block;
       font-size: 0.75rem;
@@ -158,6 +165,7 @@
       color: #b91c1c;
       margin-left: 0.25rem;
     }
+
     .contact-item.red {
       border-left: 4px solid #dc2626;
     }
@@ -167,6 +175,7 @@
     .contact-item.green {
       border-left: 4px solid #16a34a;
     }
+
     #history-list {
       max-height: 120px;
       overflow-y: auto;
@@ -177,8 +186,10 @@
       margin-top: 0.3rem;
       background: #f9fafb;
     }
+
   </style>
 </head>
+
 <body>
 <header>
   <h1>CRM de Networking Personal</h1>
@@ -217,41 +228,55 @@
       <h3 style="margin-top:0;">Detalle</h3>
       <div id="detail-empty" class="muted">Selecciona un contacto o crea uno nuevo.</div>
       <div id="detail-form" style="display:none;">
+
         <div class="field">
           <label>Nombre</label>
           <input id="f-name" type="text" />
         </div>
+
         <div class="field">
           <label>Empresa</label>
           <input id="f-company" type="text" />
         </div>
+
         <div class="field">
           <label>Cargo / Rol</label>
           <input id="f-role" type="text" />
         </div>
+
         <div class="field">
           <label>Email</label>
           <input id="f-email" type="email" />
         </div>
+
         <div class="field">
           <label>Teléfono</label>
           <input id="f-phone" type="text" />
         </div>
+
         <div class="field">
           <label>Tags (separados por comas)</label>
           <input id="f-tags" type="text" placeholder="IA, Startups, Inversores..." />
         </div>
+
         <div class="field">
           <label>Notas</label>
           <textarea id="f-notes"></textarea>
         </div>
+
         <div class="field">
           <label>Último contacto</label>
           <input id="f-last" type="date" />
         </div>
+
         <div class="field">
           <label>Próximo seguimiento</label>
           <input id="f-next" type="date" />
+        </div>
+
+        <div class="field">
+          <label>Ignorar este contacto (no hacer seguimiento)</label>
+          <input type="checkbox" id="f-ignore" />
         </div>
 
         <div class="field">
@@ -262,15 +287,9 @@
         </div>
 
         <div class="field">
-          <label>
-            <input type="checkbox" id="f-ignore" />
-            Ignorar este contacto (no hacer seguimiento)
-          </label>
-        </div>
-
-        <div class="field">
           <button id="delete-btn" class="btn btn-danger">Eliminar contacto</button>
         </div>
+
       </div>
     </div>
   </div>
@@ -531,16 +550,23 @@
   }
 
   function computeUrgency(contact) {
-    if (contact.ignore) return "green";
+    if (contact.ignore) return ""; // sin color de urgencia
+
     if (!contact.next_followup) return "green";
+
     const today = new Date();
     const next = new Date(contact.next_followup);
     if (isNaN(next.getTime())) return "green";
-    if (next < new Date(today.toISOString().slice(0,10))) return "red";
-    const diffDays = (next - today) / 86400000;
+
+    const todayDate = new Date(today.toISOString().slice(0, 10));
+    if (next < todayDate) return "red";
+
+    const diffDays = (next - todayDate) / 86400000;
     if (diffDays <= 7) return "yellow";
+
     return "green";
   }
+
 
   function getFilteredContacts() {
     const q = (searchEl.value || "").toLowerCase().trim();
@@ -708,7 +734,6 @@
     c.notes = fNotes.value.trim();
     c.last_contact = fLast.value || "";
     c.next_followup = fNext.value || "";
-    c.ignore = fIgnore.checked;
     markDirty();
     renderContacts();
     renderSummary();
@@ -745,6 +770,7 @@
     renderContacts();
   });
 
+  // Campos de texto, fechas, etc.
   [fName, fCompany, fRole, fEmail, fPhone, fTags, fNotes, fLast, fNext].forEach(
     (el) => {
       el.addEventListener("input", () => {
@@ -753,6 +779,19 @@
     }
   );
 
+  // Checkbox ignorar contacto
+  fIgnore.addEventListener("change", () => {
+    const c = getCurrentContact();
+    if (!c) return;
+
+    c.ignore = fIgnore.checked;
+    markDirty();
+    renderContacts();
+    renderSummary();
+  });
+
+
+  // Historial
   addHistoryBtn.addEventListener("click", addHistoryEntry);
 
   // =========================
