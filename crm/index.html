@@ -501,29 +501,25 @@
   }
 
   async function saveCrmData() {
-    if (!crmFileId) return;
-    setStatus("Guardando en Drive...");
-    const res = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files/" +
-        crmFileId +
-        "?uploadType=media",
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: "Bearer " + accessToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      }
-    );
-    if (!res.ok) {
-      setStatus("Error al guardar.");
-      return;
+    try {
+      const json = JSON.stringify(crmData, null, 2);
+
+      await gapi.client.drive.files.update({
+        fileId: CRM_FILE_ID,
+        uploadType: "media",
+        resource: { mimeType: "application/json" },
+        body: json,
+      });
+
+      dirty = false;
+      saveBtn.disabled = true;
+
+      alert("✔ Cambios guardados correctamente.");
+
+    } catch (err) {
+      console.error("Error al guardar:", err);
+      alert("❌ No se pudo guardar. Revisa tu conexión a Google.");
     }
-    isDirty = false;
-    saveBtn.disabled = true;
-    setStatus("Cambios guardados.");
-    renderSummary();
   }
 
   // =========================
@@ -630,19 +626,47 @@
   }
 
   function renderHistory(contact) {
-    const list = contact.history || [];
-    if (!list.length) {
-      historyListEl.innerHTML = "<div class='muted'>Sin historial todavía.</div>";
+    historyListEl.innerHTML = "";
+
+    if (!contact.history || contact.history.length === 0) {
+      historyListEl.innerHTML = "<div class='muted'>Sin historial.</div>";
       return;
     }
-    historyListEl.innerHTML = list
-      .map(
-        (h) =>
-          `<div>• ${h.date}: ${h.note
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")}</div>`
-      )
-      .join("");
+
+    contact.history.forEach((entry, index) => {
+      const div = document.createElement("div");
+      div.style.display = "flex";
+      div.style.justifyContent = "space-between";
+      div.style.alignItems = "center";
+      div.style.marginBottom = "4px";
+
+      div.innerHTML = `
+        <span><strong>${entry.date}</strong>: ${entry.note}</span>
+        <div>
+          <button data-edit="${index}" class="btn btn-secondary btn-sm">✏️</button>
+          <button data-delete="${index}" class="btn btn-danger btn-sm">❌</button>
+        </div>
+      `;
+
+      // EDITAR
+      div.querySelector("[data-edit]").addEventListener("click", () => {
+        const newText = prompt("Editar entrada:", entry.note);
+        if (newText !== null && newText.trim() !== "") {
+          entry.note = newText.trim();
+          markDirty();
+          renderHistory(contact);
+        }
+      });
+
+      // BORRAR
+      div.querySelector("[data-delete]").addEventListener("click", () => {
+        contact.history.splice(index, 1);
+        markDirty();
+        renderHistory(contact);
+      });
+
+      historyListEl.appendChild(div);
+    });
   }
 
   function renderDetail(contact) {
