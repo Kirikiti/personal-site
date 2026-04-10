@@ -107,6 +107,10 @@
     .contact-item.active {
       background: #dbeafe;
     }
+    .contact-item.ignored {
+      opacity: 0.5;
+      border-left: 4px solid #9ca3af;
+    }
     .contact-title {
       font-weight: 600;
       font-size: 0.9rem;
@@ -253,6 +257,13 @@
         </div>
 
         <div class="field">
+          <label>
+            <input type="checkbox" id="f-ignore" />
+            Ignorar este contacto (no hacer seguimiento)
+          </label>
+        </div>
+
+        <div class="field">
           <button id="delete-btn" class="btn btn-danger">Eliminar contacto</button>
         </div>
       </div>
@@ -302,6 +313,7 @@
   const fHistory = document.getElementById("f-history");
   const addHistoryBtn = document.getElementById("add-history-btn");
   const historyListEl = document.getElementById("history-list");
+  const fIgnore = document.getElementById("f-ignore");
 
   // =========================
   // AUTENTICACIÓN
@@ -514,6 +526,7 @@
   }
 
   function computeUrgency(contact) {
+    if (contact.ignore) return "green";
     if (!contact.next_followup) return "green";
     const today = new Date();
     const next = new Date(contact.next_followup);
@@ -560,6 +573,7 @@
       div.className =
         "contact-item " +
         urgency +
+        (c.ignore ? " ignored" : "") +
         (c.id === currentContactId ? " active" : "");
       div.onclick = () => {
         currentContactId = c.id;
@@ -618,6 +632,7 @@
     fNotes.value = contact.notes || "";
     fLast.value = contact.last_contact || "";
     fNext.value = contact.next_followup || "";
+    fIgnore.checked = !!contact.ignore;
     fHistory.value = "";
     renderHistory(contact);
   }
@@ -652,6 +667,7 @@
       last_contact: "",
       next_followup: "",
       history: [],
+      ignore: false,
     };
     data.contacts.push(c);
     currentContactId = c.id;
@@ -687,6 +703,7 @@
     c.notes = fNotes.value.trim();
     c.last_contact = fLast.value || "";
     c.next_followup = fNext.value || "";
+    c.ignore = fIgnore.checked;
     markDirty();
     renderContacts();
     renderSummary();
