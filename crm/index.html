@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>CRM Networking Personal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Google API client -->
+  <script src="https://apis.google.com/js/api.js"></script>
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background: #f5f5f5;
+      color: #222;
+    }
+    header {
+      background: #111827;
+      color: white;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    main {
+      padding: 1rem 1.5rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .btn {
+      padding: 0.4rem 0.8rem;
+      border-radius: 0.375rem;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: white;
+    }
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .card {
+      background: white;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      margin-bottom: 1rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 3fr;
+      gap: 1rem;
+    }
+    .field {
+      margin-bottom: 0.5rem;
+    }
+    .field label {
+      display: block;
+      font-size: 0.8rem;
+      color: #4b5563;
+      margin-bottom: 0.15rem;
+    }
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      padding: 0.35rem 0.45rem;
+      border-radius: 0.375rem;
+      border: 1px solid #d1d5db;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+    .field textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    .contacts-list {
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    .contact-item {
+      padding: 0.5rem 0.4rem;
+      border-bottom: 1px solid #e5e7eb;
+      cursor: pointer;
+    }
+    .contact-item:hover {
+      background: #f3f4f6;
+    }
+    .contact-item.active {
+      background: #dbeafe;
+    }
+    .contact-title {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .contact-sub {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .tags {
+      font-size: 0.75rem;
+      color: #4b5563;
+    }
+    .pill {
+      display: inline-block;
+      background: #e5e7eb;
+      border-radius: 999px;
+      padding: 0.1rem 0.5rem;
+      margin-right: 0.25rem;
+      margin-top: 0.15rem;
+    }
+    .top-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .top-row input {
+      flex: 1;
+    }
+    .muted {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      background: #fee2e2;
+      color: #b91c1c;
+      margin-left: 0.25rem;
+    }
+    .contact-item.red {
+      border-left: 4px solid #dc2626;
+    }
+    .contact-item.yellow {
+      border-left: 4px solid #facc15;
+    }
+    .contact-item.green {
+      border-left: 4px solid #16a34a;
+    }
+    #history-list {
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.375rem;
+      padding: 0.4rem;
+      margin-top: 0.3rem;
+      background: #f9fafb;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>CRM de Networking Personal</h1>
+  <div>
+    <span id="user-email" class="muted"></span>
+    <button id="login-btn" class="btn btn-primary">Iniciar sesión con Google</button>
+    <button id="logout-btn" class="btn btn-secondary" style="display:none;">Salir</button>
+  </div>
+</header>
+
+<main>
+  <div id="status" class="muted" style="margin-bottom:0.5rem;">No autenticado.</div>
+
+  <div class="card">
+    <div class="top-row">
+      <input id="search" type="text" placeholder="Buscar por nombre, empresa o tags..." />
+      <select id="urgency-filter">
+        <option value="">Todos</option>
+        <option value="red">Vencidos</option>
+        <option value="yellow">Próxima semana</option>
+        <option value="green">Sin urgencia</option>
+      </select>
+      <button id="new-contact-btn" class="btn btn-secondary">Nuevo contacto</button>
+      <button id="save-btn" class="btn btn-primary" disabled>Guardar cambios</button>
+    </div>
+    <div class="muted" id="summary"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3 style="margin-top:0;">Contactos</h3>
+      <div class="contacts-list" id="contacts-list"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Detalle</h3>
+      <div id="detail-empty" class="muted">Selecciona un contacto o crea uno nuevo.</div>
+      <div id="detail-form" style="display:none;">
+        <div class="field">
+          <label>Nombre</label>
+          <input id="f-name" type="text" />
+        </div>
+        <div class="field">
+          <label>Empresa</label>
+          <input id="f-company" type="text" />
+        </div>
+        <div class="field">
+          <label>Cargo / Rol</label>
+          <input id="f-role" type="text" />
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input id="f-email" type="email" />
+        </div>
+        <div class="field">
+          <label>Teléfono</label>
+          <input id="f-phone" type="text" />
+        </div>
+        <div class="field">
+          <label>Tags (separados por comas)</label>
+          <input id="f-tags" type="text" placeholder="IA, Startups, Inversores..." />
+        </div>
+        <div class="field">
+          <label>Notas</label>
+          <textarea id="f-notes"></textarea>
+        </div>
+        <div class="field">
+          <label>Último contacto</label>
+          <input id="f-last" type="date" />
+        </div>
+        <div class="field">
+          <label>Próximo seguimiento</label>
+          <input id="f-next" type="date" />
+        </div>
+
+        <div class="field">
+          <label>Historial de interacciones</label>
+          <textarea id="f-history" placeholder="Añade notas de interacción..."></textarea>
+          <button id="add-history-btn" class="btn btn-secondary" type="button">Añadir al historial</button>
+          <div id="history-list" class="muted"></div>
+        </div>
+
+        <div class="field">
+          <button id="delete-btn" class="btn btn-danger">Eliminar contacto</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // =========================
+  // CONFIGURACIÓN
+  // =========================
+  const CLIENT_ID = "TU_CLIENT_ID_DE_GOOGLE_AQUI.apps.googleusercontent.com";
+  const API_KEY = "";
+  const SCOPES = "https://www.googleapis.com/auth/drive.file";
+  const CRM_FILENAME = "networking_crm.json";
+
+  let accessToken = null;
+  let userEmail = null;
+  let crmFileId = null;
+  let data = { contacts: [] };
+  let currentContactId = null;
+  let isDirty = false;
+
+  const statusEl = document.getElementById("status");
+  const userEmailEl = document.getElementById("user-email");
+  const loginBtn = document.getElementById("login-btn");
+  const logoutBtn = document.getElementById("logout-btn");
+  const contactsListEl = document.getElementById("contacts-list");
+  const searchEl = document.getElementById("search");
+  const urgencyFilterEl = document.getElementById("urgency-filter");
+  const summaryEl = document.getElementById("summary");
+  const newContactBtn = document.getElementById("new-contact-btn");
+  const saveBtn = document.getElementById("save-btn");
+  const detailEmptyEl = document.getElementById("detail-empty");
+  const detailFormEl = document.getElementById("detail-form");
+  const deleteBtn = document.getElementById("delete-btn");
+
+  const fName = document.getElementById("f-name");
+  const fCompany = document.getElementById("f-company");
+  const fRole = document.getElementById("f-role");
+  const fEmail = document.getElementById("f-email");
+  const fPhone = document.getElementById("f-phone");
+  const fTags = document.getElementById("f-tags");
+  const fNotes = document.getElementById("f-notes");
+  const fLast = document.getElementById("f-last");
+  const fNext = document.getElementById("f-next");
+  const fHistory = document.getElementById("f-history");
+  const addHistoryBtn = document.getElementById("add-history-btn");
+  const historyListEl = document.getElementById("history-list");
+
+  // =========================
+  // AUTENTICACIÓN
+  // =========================
+
+  function initGoogle() {
+    google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (resp) => {
+        if (resp.error) {
+          setStatus("Error al obtener token.");
+          return;
+        }
+        accessToken = resp.access_token;
+        setStatus("Autenticado. Cargando datos...");
+        fetchUserInfo().then(() => {
+          loadOrCreateCrmFile();
+        });
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "inline-block";
+      },
+    });
+  }
+
+  function login() {
+    google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (resp) => {
+        if (resp.error) {
+          setStatus("Error al iniciar sesión.");
+          return;
+        }
+        accessToken = resp.access_token;
+        setStatus("Autenticado. Cargando datos...");
+        fetchUserInfo().then(() => {
+          loadOrCreateCrmFile();
+        });
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "inline-block";
+      },
+    }).requestAccessToken();
+  }
+
+  function logout() {
+    accessToken = null;
+    userEmail = null;
+    crmFileId = null;
+    data = { contacts: [] };
+    currentContactId = null;
+    isDirty = false;
+    renderContacts();
+    renderDetail(null);
+    userEmailEl.textContent = "";
+    setStatus("Sesión cerrada.");
+    loginBtn.style.display = "inline-block";
+    logoutBtn.style.display = "none";
+    saveBtn.disabled = true;
+  }
+
+  async function fetchUserInfo() {
+    try {
+      const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: "Bearer " + accessToken },
+      });
+      const info = await res.json();
+      userEmail = info.email;
+      userEmailEl.textContent = userEmail || "";
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // =========================
+  // DRIVE: CARGA / GUARDADO
+  // =========================
+
+  async function loadOrCreateCrmFile() {
+    try {
+      const searchUrl =
+        "https://www.googleapis.com/drive/v3/files?q=" +
+        encodeURIComponent("name='" + CRM_FILENAME + "' and trashed=false") +
+        "&fields=files(id,name)";
+      const res = await fetch(searchUrl, {
+        headers: { Authorization: "Bearer " + accessToken },
+      });
+      const json = await res.json();
+      if (json.files && json.files.length > 0) {
+        crmFileId = json.files[0].id;
+        await loadCrmData();
+      } else {
+        await createCrmFile();
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus("Error al acceder a Google Drive.");
+    }
+  }
+
+  async function createCrmFile() {
+    setStatus("Creando archivo de CRM en Drive...");
+    const metadata = {
+      name: CRM_FILENAME,
+      mimeType: "application/json",
+    };
+
+    const boundary = "-------314159265358979323846";
+    const delimiter = "\r\n--" + boundary + "\r\n";
+    const closeDelim = "\r\n--" + boundary + "--";
+
+    const body =
+      delimiter +
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+      JSON.stringify(metadata) +
+      delimiter +
+      "Content-Type: application/json\r\n\r\n" +
+      JSON.stringify({ contacts: [] }) +
+      closeDelim;
+
+    const res = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + accessToken,
+          "Content-Type": "multipart/related; boundary=" + boundary,
+        },
+        body,
+      }
+    );
+    const json = await res.json();
+    crmFileId = json.id;
+    data = { contacts: [] };
+    isDirty = false;
+    setStatus("Archivo de CRM creado.");
+    renderContacts();
+    renderSummary();
+  }
+
+  async function loadCrmData() {
+    setStatus("Cargando datos del CRM...");
+    const res = await fetch(
+      "https://www.googleapis.com/drive/v3/files/" +
+        crmFileId +
+        "?alt=media",
+      {
+        headers: { Authorization: "Bearer " + accessToken },
+      }
+    );
+    const json = await res.json();
+    data = json || { contacts: [] };
+    if (!data.contacts) data.contacts = [];
+    data.contacts.forEach(c => {
+      if (!c.history) c.history = [];
+    });
+    isDirty = false;
+    setStatus("Datos cargados.");
+    renderContacts();
+    renderSummary();
+  }
+
+  async function saveCrmData() {
+    if (!crmFileId) return;
+    setStatus("Guardando en Drive...");
+    const res = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files/" +
+        crmFileId +
+        "?uploadType=media",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: "Bearer " + accessToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      }
+    );
+    if (!res.ok) {
+      setStatus("Error al guardar.");
+      return;
+    }
+    isDirty = false;
+    saveBtn.disabled = true;
+    setStatus("Cambios guardados.");
+    renderSummary();
+  }
+
+  // =========================
+  // LÓGICA DE CONTACTOS
+  // =========================
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+
+  function markDirty() {
+    if (!isDirty) {
+      isDirty = true;
+      saveBtn.disabled = false;
+      setStatus("Cambios sin guardar.");
+    }
+  }
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxx".replace(/x/g, () =>
+      ((Math.random() * 36) | 0).toString(36)
+    );
+  }
+
+  function computeUrgency(contact) {
+    if (!contact.next_followup) return "green";
+    const today = new Date();
+    const next = new Date(contact.next_followup);
+    if (isNaN(next.getTime())) return "green";
+    if (next < new Date(today.toISOString().slice(0,10))) return "red";
+    const diffDays = (next - today) / 86400000;
+    if (diffDays <= 7) return "yellow";
+    return "green";
+  }
+
+  function getFilteredContacts() {
+    const q = (searchEl.value || "").toLowerCase().trim();
+    const uf = urgencyFilterEl.value;
+    return data.contacts.filter((c) => {
+      const tags = (c.tags || []).join(" ");
+      const matchesText =
+        !q ||
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.company || "").toLowerCase().includes(q) ||
+        tags.toLowerCase().includes(q);
+
+      if (!matchesText) return false;
+      if (!uf) return true;
+
+      const urgency = computeUrgency(c);
+      return urgency === uf;
+    });
+  }
+
+  function renderContacts() {
+    contactsListEl.innerHTML = "";
+    const contacts = getFilteredContacts().sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "")
+    );
+    if (contacts.length === 0) {
+      contactsListEl.innerHTML =
+        '<div class="muted">Sin contactos. Crea el primero.</div>';
+      return;
+    }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    contacts.forEach((c) => {
+      const div = document.createElement("div");
+      const urgency = computeUrgency(c);
+      div.className =
+        "contact-item " +
+        urgency +
+        (c.id === currentContactId ? " active" : "");
+      div.onclick = () => {
+        currentContactId = c.id;
+        renderContacts();
+        renderDetail(c);
+      };
+      const tagsHtml = (c.tags || [])
+        .map((t) => `<span class="pill">${t}</span>`)
+        .join(" ");
+      const overdue =
+        c.next_followup && c.next_followup < todayStr
+          ? '<span class="badge">seguimiento vencido</span>'
+          : "";
+      const safeName = (c.name || "(Sin nombre)").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const safeCompany = (c.company || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      div.innerHTML = `
+        <div class="contact-title">${safeName} ${overdue}</div>
+        <div class="contact-sub">${safeCompany}</div>
+        <div class="tags">${tagsHtml}</div>
+      `;
+      contactsListEl.appendChild(div);
+    });
+  }
+
+  function renderHistory(contact) {
+    const list = contact.history || [];
+    if (!list.length) {
+      historyListEl.innerHTML = "<div class='muted'>Sin historial todavía.</div>";
+      return;
+    }
+    historyListEl.innerHTML = list
+      .map(
+        (h) =>
+          `<div>• ${h.date}: ${h.note
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")}</div>`
+      )
+      .join("");
+  }
+
+  function renderDetail(contact) {
+    if (!contact) {
+      detailEmptyEl.style.display = "block";
+      detailFormEl.style.display = "none";
+      return;
+    }
+    detailEmptyEl.style.display = "none";
+    detailFormEl.style.display = "block";
+
+    fName.value = contact.name || "";
+    fCompany.value = contact.company || "";
+    fRole.value = contact.role || "";
+    fEmail.value = contact.email || "";
+    fPhone.value = contact.phone || "";
+    fTags.value = (contact.tags || []).join(", ");
+    fNotes.value = contact.notes || "";
+    fLast.value = contact.last_contact || "";
+    fNext.value = contact.next_followup || "";
+    fHistory.value = "";
+    renderHistory(contact);
+  }
+
+  function renderSummary() {
+    const total = data.contacts.length;
+    const today = new Date().toISOString().slice(0, 10);
+    const pending = data.contacts.filter(
+      (c) => c.next_followup && c.next_followup <= today
+    ).length;
+    summaryEl.textContent =
+      "Contactos: " +
+      total +
+      " · Seguimientos pendientes (hoy o antes): " +
+      pending;
+  }
+
+  function getCurrentContact() {
+    return data.contacts.find((c) => c.id === currentContactId) || null;
+  }
+
+  function createNewContact() {
+    const c = {
+      id: uuid(),
+      name: "",
+      company: "",
+      role: "",
+      email: "",
+      phone: "",
+      tags: [],
+      notes: "",
+      last_contact: "",
+      next_followup: "",
+      history: [],
+    };
+    data.contacts.push(c);
+    currentContactId = c.id;
+    markDirty();
+    renderContacts();
+    renderDetail(c);
+    renderSummary();
+  }
+
+  function deleteCurrentContact() {
+    if (!currentContactId) return;
+    if (!confirm("¿Eliminar este contacto?")) return;
+    data.contacts = data.contacts.filter((c) => c.id !== currentContactId);
+    currentContactId = null;
+    markDirty();
+    renderContacts();
+    renderDetail(null);
+    renderSummary();
+  }
+
+  function updateCurrentContactFromForm() {
+    const c = getCurrentContact();
+    if (!c) return;
+    c.name = fName.value.trim();
+    c.company = fCompany.value.trim();
+    c.role = fRole.value.trim();
+    c.email = fEmail.value.trim();
+    c.phone = fPhone.value.trim();
+    c.tags = fTags.value
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t);
+    c.notes = fNotes.value.trim();
+    c.last_contact = fLast.value || "";
+    c.next_followup = fNext.value || "";
+    markDirty();
+    renderContacts();
+    renderSummary();
+  }
+
+  function addHistoryEntry() {
+    const c = getCurrentContact();
+    if (!c) return;
+    const note = fHistory.value.trim();
+    if (!note) return;
+    if (!c.history) c.history = [];
+    c.history.push({
+      date: new Date().toISOString().slice(0, 10),
+      note,
+    });
+    fHistory.value = "";
+    markDirty();
+    renderHistory(c);
+  }
+
+  // =========================
+  // EVENTOS
+  // =========================
+
+  loginBtn.addEventListener("click", login);
+  logoutBtn.addEventListener("click", logout);
+  newContactBtn.addEventListener("click", createNewContact);
+  saveBtn.addEventListener("click", saveCrmData);
+  deleteBtn.addEventListener("click", deleteCurrentContact);
+  searchEl.addEventListener("input", () => {
+    renderContacts();
+  });
+  urgencyFilterEl.addEventListener("change", () => {
+    renderContacts();
+  });
+
+  [fName, fCompany, fRole, fEmail, fPhone, fTags, fNotes, fLast, fNext].forEach(
+    (el) => {
+      el.addEventListener("input", () => {
+        updateCurrentContactFromForm();
+      });
+    }
+  );
+
+  addHistoryBtn.addEventListener("click", addHistoryEntry);
+
+  // =========================
+  // INICIO
+  // =========================
+
+  window.onload = () => {
+    setStatus("Listo. Inicia sesión para cargar tu CRM.");
+    if (window.google && google.accounts && google.accounts.oauth2) {
+      initGoogle();
+    } else {
+      setTimeout(() => {
+        if (window.google && google.accounts && google.accounts.oauth2) {
+          initGoogle();
+        }
+      }, 1000);
+    }
+  };
+</script>
+</body>
+</html>
