@@ -660,6 +660,9 @@
 
       // BORRAR
       div.querySelector("[data-delete]").addEventListener("click", () => {
+        if (!confirm("¿Seguro que quieres eliminar esta entrada del historial?")) {
+          return;
+        }
         contact.history.splice(index, 1);
         markDirty();
         renderHistory(contact);
