@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site Under Construction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+            color: #333;
+        }
+        header {
+            background: #222;
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        .container {
+            max-width: 700px;
+            margin: 80px auto;
+            text-align: center;
+        }
+        .box {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 28px;
+        }
+        p {
+            font-size: 18px;
+            line-height: 1.6;
+        }
+        .loader {
+            margin: 25px auto;
+            border: 6px solid #ddd;
+            border-top: 6px solid #0078ff;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Botón volver */
+        .back-btn {
+            display: inline-block;
+            margin-top: 30px;
+            padding: 12px 22px;
+            background: #0078ff;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 17px;
+            transition: 0.2s;
+        }
+        .back-btn:hover {
+            background: #005fcc;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>My Personal Technical Portfolio</h1>
+    <p>Web apps, dashboards, ML experiments & business analytics tools</p>
+</header>
+
+<div class="container">
+    <div class="box">
+        <h2>🚧 Site Under Construction</h2>
+        <p>I’m currently building this section. New dashboards, ML tools and CRM modules will be available soon.</p>
+        <div class="loader"></div>
+        <p>Stay tuned — updates coming shortly.</p>
+
+        <a id="backButton" class="back-btn">← Back to Menu</a>
+    </div>
+</div>
+
+<script>
+    // Senior-level navigation fallback strategy
+    const backButton = document.getElementById("backButton");
+
+    backButton.addEventListener("click", () => {
+        // 1. Si hay historial previo, vuelve atrás
+        if (document.referrer && document.referrer !== window.location.href) {
+            window.history.back();
+            return;
+        }
+
+        // 2. Si NO hay historial (acceso directo), vuelve al menú principal
+        window.location.href = "/";
+    });
+</script>
+
+</body>
+</html>
