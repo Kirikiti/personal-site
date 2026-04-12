@@ -503,20 +503,30 @@
 
   async function saveCrmData() {
     try {
-      const json = JSON.stringify(crmData, null, 2);
+      const json = JSON.stringify(data, null, 2);
 
-      await gapi.client.drive.files.update({
-        fileId: CRM_FILE_ID,
-        uploadType: "media",
-        resource: { mimeType: "application/json" },
-        body: json,
-      });
+      const res = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files/" +
+          crmFileId +
+          "?uploadType=media",
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: "Bearer " + accessToken,
+            "Content-Type": "application/json",
+          },
+          body: json,
+        }
+      );
 
-      dirty = false;
+      if (!res.ok) {
+        throw new Error("Error HTTP " + res.status);
+      }
+
+      isDirty = false;
       saveBtn.disabled = true;
 
       alert("✔ Cambios guardados correctamente.");
-
     } catch (err) {
       console.error("Error al guardar:", err);
       alert("❌ No se pudo guardar. Revisa tu conexión a Google.");
