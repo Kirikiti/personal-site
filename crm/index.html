@@ -5,6 +5,22 @@
   <title>CRM Networking Personal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+  <!-- Content Security Policy básica -->
+  <meta http-equiv="Content-Security-Policy"
+        content="
+          default-src 'self';
+          script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com;
+          style-src 'self' 'unsafe-inline';
+          img-src 'self' data:;
+          connect-src 'self' https://www.googleapis.com;
+          frame-src https://accounts.google.com;
+          object-src 'none';
+        ">
+
+  <!-- Permissions / seguridad extra -->
+  <meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=()">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Google API client -->
@@ -186,7 +202,6 @@
       margin-top: 0.3rem;
       background: #f9fafb;
     }
-
   </style>
 </head>
 
@@ -299,13 +314,21 @@
   // =========================
   // CONFIGURACIÓN
   // =========================
-  /*  const CLIENT_ID = TU_CLIENT_ID_DE_GOOGLE_AQUI.apps.googleusercontent.com */
   const CLIENT_ID = "476093194527-1konl7vg3vemg90ssde1aj2b002jc78e.apps.googleusercontent.com";
   const API_KEY = "";
   const SCOPES = "https://www.googleapis.com/auth/drive.file";
   const CRM_FILENAME = "networking_crm.json";
 
-  let accessToken = null;
+  // Encapsular token para reducir superficie
+  const tokenStore = (() => {
+    let token = null;
+    return {
+      set: (t) => { token = t; },
+      get: () => token,
+      clear: () => { token = null; }
+    };
+  })();
+
   let userEmail = null;
   let crmFileId = null;
   let data = { contacts: [] };
@@ -341,6 +364,41 @@
   const fIgnore = document.getElementById("f-ignore");
 
   // =========================
+  // UTILIDADES DE SEGURIDAD
+  // =========================
+
+  function sanitize(str) {
+    if (typeof str !== "string") return "";
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.textContent;
+  }
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+
+  function markDirty() {
+    if (!isDirty) {
+      isDirty = true;
+      saveBtn.disabled = false;
+      setStatus("Cambios sin guardar.");
+    }
+  }
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    if (window.crypto && crypto.getRandomValues) {
+      const buf = new Uint8Array(16);
+      crypto.getRandomValues(buf);
+      return Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+    return "xxxxxx".replace(/x/g, () =>
+      ((Math.random() * 36) | 0).toString(36)
+    );
+  }
+
+  // =========================
   // AUTENTICACIÓN
   // =========================
 
@@ -353,7 +411,7 @@
           setStatus("Error al obtener token.");
           return;
         }
-        accessToken = resp.access_token;
+        tokenStore.set(resp.access_token);
         setStatus("Autenticado. Cargando datos...");
         fetchUserInfo().then(() => {
           loadOrCreateCrmFile();
@@ -373,7 +431,7 @@
           setStatus("Error al iniciar sesión.");
           return;
         }
-        accessToken = resp.access_token;
+        tokenStore.set(resp.access_token);
         setStatus("Autenticado. Cargando datos...");
         fetchUserInfo().then(() => {
           loadOrCreateCrmFile();
@@ -385,7 +443,7 @@
   }
 
   function logout() {
-    accessToken = null;
+    tokenStore.clear();
     userEmail = null;
     crmFileId = null;
     data = { contacts: [] };
@@ -403,8 +461,9 @@
   async function fetchUserInfo() {
     try {
       const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: "Bearer " + accessToken },
+        headers: { Authorization: "Bearer " + tokenStore.get() },
       });
+      if (!res.ok) return;
       const info = await res.json();
       userEmail = info.email;
       userEmailEl.textContent = userEmail || "";
@@ -424,8 +483,11 @@
         encodeURIComponent("name='" + CRM_FILENAME + "' and trashed=false") +
         "&fields=files(id,name)";
       const res = await fetch(searchUrl, {
-        headers: { Authorization: "Bearer " + accessToken },
+        headers: { Authorization: "Bearer " + tokenStore.get() },
       });
+      if (!res.ok) {
+        throw new Error("Error HTTP " + res.status);
+      }
       const json = await res.json();
       if (json.files && json.files.length > 0) {
         crmFileId = json.files[0].id;
@@ -464,12 +526,17 @@
       {
         method: "POST",
         headers: {
-          Authorization: "Bearer " + accessToken,
+          Authorization: "Bearer " + tokenStore.get(),
           "Content-Type": "multipart/related; boundary=" + boundary,
         },
         body,
       }
     );
+    if (!res.ok) {
+      console.error("Error al crear archivo:", res.status);
+      setStatus("No se pudo crear el archivo de CRM.");
+      return;
+    }
     const json = await res.json();
     crmFileId = json.id;
     data = { contacts: [] };
@@ -486,15 +553,30 @@
         crmFileId +
         "?alt=media",
       {
-        headers: { Authorization: "Bearer " + accessToken },
+        headers: { Authorization: "Bearer " + tokenStore.get() },
       }
     );
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        setStatus("Sesión expirada. Vuelve a iniciar sesión.");
+        logout();
+        return;
+      }
+      console.error("Error al cargar CRM:", res.status);
+      setStatus("Error al cargar datos del CRM.");
+      return;
+    }
     const json = await res.json();
-    data = json || { contacts: [] };
+    data = json && Array.isArray(json.contacts) ? json : { contacts: [] };
     if (!data.contacts) data.contacts = [];
+    // Normalizar estructura
     data.contacts.forEach(c => {
-      if (!c.history) c.history = [];
+      if (!c.history || !Array.isArray(c.history)) c.history = [];
     });
+    // Limitar tamaño básico para evitar cuelgues
+    if (data.contacts.length > 5000) {
+      data.contacts = data.contacts.slice(0, 5000);
+    }
     isDirty = false;
     setStatus("Datos cargados.");
     renderContacts();
@@ -512,7 +594,7 @@
         {
           method: "PATCH",
           headers: {
-            Authorization: "Bearer " + accessToken,
+            Authorization: "Bearer " + tokenStore.get(),
             "Content-Type": "application/json",
           },
           body: json,
@@ -537,25 +619,6 @@
   // LÓGICA DE CONTACTOS
   // =========================
 
-  function setStatus(msg) {
-    statusEl.textContent = msg;
-  }
-
-  function markDirty() {
-    if (!isDirty) {
-      isDirty = true;
-      saveBtn.disabled = false;
-      setStatus("Cambios sin guardar.");
-    }
-  }
-
-  function uuid() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return "xxxxxx".replace(/x/g, () =>
-      ((Math.random() * 36) | 0).toString(36)
-    );
-  }
-
   function computeUrgency(contact) {
     if (contact.ignore) return ""; // sin color de urgencia
 
@@ -573,7 +636,6 @@
 
     return "green";
   }
-
 
   function getFilteredContacts() {
     const q = (searchEl.value || "").toLowerCase().trim();
@@ -600,8 +662,10 @@
       (a.name || "").localeCompare(b.name || "")
     );
     if (contacts.length === 0) {
-      contactsListEl.innerHTML =
-        '<div class="muted">Sin contactos. Crea el primero.</div>';
+      const div = document.createElement("div");
+      div.className = "muted";
+      div.textContent = "Sin contactos. Crea el primero.";
+      contactsListEl.appendChild(div);
       return;
     }
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -618,20 +682,39 @@
         renderContacts();
         renderDetail(c);
       };
-      const tagsHtml = (c.tags || [])
-        .map((t) => `<span class="pill">${t}</span>`)
-        .join(" ");
-      const overdue =
-        c.next_followup && c.next_followup < todayStr
-          ? '<span class="badge">seguimiento vencido</span>'
-          : "";
-      const safeName = (c.name || "(Sin nombre)").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const safeCompany = (c.company || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      div.innerHTML = `
-        <div class="contact-title">${safeName} ${overdue}</div>
-        <div class="contact-sub">${safeCompany}</div>
-        <div class="tags">${tagsHtml}</div>
-      `;
+
+      const safeName = sanitize(c.name || "(Sin nombre)");
+      const safeCompany = sanitize(c.company || "");
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "contact-title";
+      titleEl.textContent = safeName;
+
+      if (c.next_followup && c.next_followup < todayStr) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "seguimiento vencido";
+        titleEl.appendChild(document.createTextNode(" "));
+        titleEl.appendChild(badge);
+      }
+
+      const subEl = document.createElement("div");
+      subEl.className = "contact-sub";
+      subEl.textContent = safeCompany;
+
+      const tagsEl = document.createElement("div");
+      tagsEl.className = "tags";
+      (c.tags || []).forEach((t) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = sanitize(t);
+        tagsEl.appendChild(pill);
+      });
+
+      div.appendChild(titleEl);
+      div.appendChild(subEl);
+      div.appendChild(tagsEl);
+
       contactsListEl.appendChild(div);
     });
   }
@@ -640,7 +723,10 @@
     historyListEl.innerHTML = "";
 
     if (!contact.history || contact.history.length === 0) {
-      historyListEl.innerHTML = "<div class='muted'>Sin historial.</div>";
+      const div = document.createElement("div");
+      div.className = "muted";
+      div.textContent = "Sin historial.";
+      historyListEl.appendChild(div);
       return;
     }
 
@@ -651,16 +737,24 @@
       div.style.alignItems = "center";
       div.style.marginBottom = "4px";
 
-      div.innerHTML = `
-        <span><strong>${entry.date}</strong>: ${entry.note}</span>
-        <div>
-          <button data-edit="${index}" class="btn btn-secondary btn-sm">✏️</button>
-          <button data-delete="${index}" class="btn btn-danger btn-sm">❌</button>
-        </div>
-      `;
+      const span = document.createElement("span");
+      const strong = document.createElement("strong");
+      strong.textContent = entry.date;
+      span.appendChild(strong);
+      span.appendChild(document.createTextNode(": " + sanitize(entry.note || "")));
+
+      const btnContainer = document.createElement("div");
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn btn-secondary btn-sm";
+      editBtn.textContent = "✏️";
+
+      const deleteBtnHistory = document.createElement("button");
+      deleteBtnHistory.className = "btn btn-danger btn-sm";
+      deleteBtnHistory.textContent = "❌";
 
       // EDITAR
-      div.querySelector("[data-edit]").addEventListener("click", () => {
+      editBtn.addEventListener("click", () => {
         const newText = prompt("Editar entrada:", entry.note);
         if (newText !== null && newText.trim() !== "") {
           entry.note = newText.trim();
@@ -670,7 +764,7 @@
       });
 
       // BORRAR
-      div.querySelector("[data-delete]").addEventListener("click", () => {
+      deleteBtnHistory.addEventListener("click", () => {
         if (!confirm("¿Seguro que quieres eliminar esta entrada del historial?")) {
           return;
         }
@@ -678,6 +772,12 @@
         markDirty();
         renderHistory(contact);
       });
+
+      btnContainer.appendChild(editBtn);
+      btnContainer.appendChild(deleteBtnHistory);
+
+      div.appendChild(span);
+      div.appendChild(btnContainer);
 
       historyListEl.appendChild(div);
     });
@@ -808,7 +908,6 @@
     renderContacts();
   });
 
-  // Campos de texto, fechas, etc.
   [fName, fCompany, fRole, fEmail, fPhone, fTags, fNotes, fLast, fNext].forEach(
     (el) => {
       el.addEventListener("input", () => {
@@ -817,7 +916,6 @@
     }
   );
 
-  // Checkbox ignorar contacto
   fIgnore.addEventListener("change", () => {
     const c = getCurrentContact();
     if (!c) return;
@@ -828,8 +926,6 @@
     renderSummary();
   });
 
-
-  // Historial
   addHistoryBtn.addEventListener("click", addHistoryEntry);
 
   // =========================
@@ -838,15 +934,15 @@
 
   window.onload = () => {
     setStatus("Listo. Inicia sesión para cargar tu CRM.");
-    if (window.google && google.accounts && google.accounts.oauth2) {
-      initGoogle();
-    } else {
-      setTimeout(() => {
-        if (window.google && google.accounts && google.accounts.oauth2) {
-          initGoogle();
-        }
-      }, 1000);
-    }
+    const tryInit = () => {
+      if (window.google && google.accounts && google.accounts.oauth2) {
+        initGoogle();
+      } else {
+        // Si no está disponible, simplemente dejamos el mensaje
+        // para que el usuario revise bloqueadores / conexión.
+      }
+    };
+    setTimeout(tryInit, 1000);
   };
 </script>
 </body>
