@@ -11,4 +11,3 @@ By using this application, you acknowledge and agree that:
 * **Security:** While efforts are made to ensure secure coding practices, this tool is experimental. Users are encouraged to enable Two-Factor Authentication (2FA) on their Google accounts.
 
 ---
-
