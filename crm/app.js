@@ -834,6 +834,13 @@ window.addEventListener("load", () => {
   (async () => {
     try {
       const encrypted = localStorage.getItem(BACKUP_KEY);
+
+      if (encrypted && !tokenStore.get()) {
+        wipeDeviceBtn.style.display = "inline-block";
+      } else {
+        wipeDeviceBtn.style.display = "none";
+      }
+
       if (encrypted) {
         const wantsRestore = confirm(
           "Hay un backup cifrado de una sesión anterior.\n" +
@@ -869,6 +876,7 @@ window.addEventListener("load", () => {
     }
 
     setStatus("Listo. Inicia sesión para cargar tu CRM.");
+
     const tryInit = () => {
       if (window.google && google.accounts && google.accounts.oauth2) {
         initGoogle();
@@ -880,6 +888,7 @@ window.addEventListener("load", () => {
         }, 1000);
       }
     };
+
     tryInit();
   })();
 });
