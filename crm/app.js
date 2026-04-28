@@ -6,6 +6,10 @@ const API_KEY = "";
 const SCOPES = "https://www.googleapis.com/auth/drive.file";
 const CRM_FILENAME = "networking_crm.json";
 
+// Backup cifrado
+const BACKUP_KEY = "crm_backup_encrypted_v1";
+let backupPassword = null;
+
 // Encapsular token
 const tokenStore = (() => {
   let token = null;
@@ -36,6 +40,7 @@ const saveBtn = document.getElementById("save-btn");
 const detailEmptyEl = document.getElementById("detail-empty");
 const detailFormEl = document.getElementById("detail-form");
 const deleteBtn = document.getElementById("delete-btn");
+const wipeDeviceBtn = document.getElementById("wipe-device-btn"); // botón nuevo opcional
 
 const fName = document.getElementById("f-name");
 const fCompany = document.getElementById("f-company");
@@ -66,14 +71,6 @@ function setStatus(msg) {
   statusEl.textContent = msg;
 }
 
-function markDirty() {
-  if (!isDirty) {
-    isDirty = true;
-    saveBtn.disabled = false;
-    setStatus("Cambios sin guardar.");
-  }
-}
-
 function uuid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   if (window.crypto && crypto.getRandomValues) {
@@ -84,6 +81,128 @@ function uuid() {
   return "xxxxxx".replace(/x/g, () =>
     ((Math.random() * 36) | 0).toString(36)
   );
+}
+
+// =========================
+// CRYPTO HELPERS (AES-GCM + PBKDF2)
+// =========================
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptData(password, dataObj) {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const plaintext = enc.encode(JSON.stringify(dataObj));
+
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      plaintext
+    )
+  );
+
+  const full = new Uint8Array(salt.length + iv.length + ciphertext.length);
+  full.set(salt, 0);
+  full.set(iv, salt.length);
+  full.set(ciphertext, salt.length + iv.length);
+
+  return btoa(String.fromCharCode(...full));
+}
+
+async function decryptData(password, base64Str) {
+  const bin = Uint8Array.from(atob(base64Str), c => c.charCodeAt(0));
+  const salt = bin.slice(0, 16);
+  const iv = bin.slice(16, 28);
+  const ciphertext = bin.slice(28);
+
+  const key = await deriveKey(password, salt);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    ciphertext
+  );
+
+  const dec = new TextDecoder();
+  return JSON.parse(dec.decode(decrypted));
+}
+
+async function ensureBackupPassword() {
+  if (backupPassword) return true;
+
+  const useBackup = confirm(
+    "¿Quieres activar un backup cifrado en este dispositivo?\n" +
+    "Úsalo solo si confías mínimamente en este navegador."
+  );
+  if (!useBackup) return false;
+
+  const pwd = prompt(
+    "Introduce una contraseña para cifrar tu backup.\n" +
+    "No la olvides: sin ella no podrás recuperar los datos."
+  );
+  if (!pwd || pwd.length < 6) {
+    alert("Contraseña demasiado corta. No se activará el backup cifrado.");
+    return false;
+  }
+  backupPassword = pwd;
+  return true;
+}
+
+async function saveEncryptedBackup() {
+  try {
+    const ok = await ensureBackupPassword();
+    if (!ok) return;
+    const encrypted = await encryptData(backupPassword, data);
+    localStorage.setItem(BACKUP_KEY, encrypted);
+  } catch (e) {
+    console.error("No se pudo guardar backup cifrado:", e);
+  }
+}
+
+function clearEncryptedBackup() {
+  try {
+    localStorage.removeItem(BACKUP_KEY);
+  } catch (e) {
+    console.error("No se pudo borrar backup cifrado:", e);
+  }
+}
+
+// =========================
+// MARCAR CAMBIOS
+// =========================
+
+async function markDirty() {
+  if (!isDirty) {
+    isDirty = true;
+    saveBtn.disabled = false;
+    setStatus("Cambios sin guardar.");
+  }
+  // Backup cifrado en segundo plano
+  saveEncryptedBackup();
 }
 
 // =========================
@@ -142,6 +261,10 @@ function logout() {
   data = { contacts: [] };
   currentContactId = null;
   isDirty = false;
+  backupPassword = null;
+
+  clearEncryptedBackup();
+
   renderContacts();
   renderDetail(null);
   userEmailEl.textContent = "";
@@ -155,16 +278,64 @@ async function fetchUserInfo() {
   try {
     const token = tokenStore.get();
     if (!token) return;
-    const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: "Bearer " + token },
-    });
-    if (!res.ok) return;
+    const res = await driveFetch("https://www.googleapis.com/oauth2/v3/userinfo");
+    if (!res || !res.ok) return;
     const info = await res.json();
     userEmail = info.email;
     userEmailEl.textContent = userEmail || "";
   } catch (e) {
     console.error(e);
   }
+}
+
+// =========================
+// TOKEN REFRESH + DRIVE FETCH
+// =========================
+
+async function refreshToken() {
+  return new Promise((resolve, reject) => {
+    try {
+      google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: (resp) => {
+          if (resp.error) {
+            reject(resp.error);
+          } else {
+            tokenStore.set(resp.access_token);
+            setStatus("Reconectado.");
+            resolve(resp.access_token);
+          }
+        }
+      }).requestAccessToken({ prompt: "" });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function driveFetch(url, options = {}, retry = true) {
+  const token = tokenStore.get();
+  const headers = { ...(options.headers || {}) };
+  if (token) {
+    headers.Authorization = "Bearer " + token;
+  }
+
+  const res = await fetch(url, { ...options, headers });
+
+  if (res && (res.status === 401 || res.status === 403) && retry) {
+    setStatus("Sesión expirada. Intentando renovar credenciales…");
+    try {
+      await refreshToken();
+      return driveFetch(url, options, false);
+    } catch (e) {
+      console.error("No se pudo renovar token:", e);
+      setStatus("La sesión expiró. Pulsa 'Iniciar sesión' para continuar.");
+      return null;
+    }
+  }
+
+  return res;
 }
 
 // =========================
@@ -182,11 +353,9 @@ async function loadOrCreateCrmFile() {
       "https://www.googleapis.com/drive/v3/files?q=" +
       encodeURIComponent("name='" + CRM_FILENAME + "' and trashed=false") +
       "&fields=files(id,name)";
-    const res = await fetch(searchUrl, {
-      headers: { Authorization: "Bearer " + token },
-    });
-    if (!res.ok) {
-      throw new Error("Error HTTP " + res.status);
+    const res = await driveFetch(searchUrl);
+    if (!res || !res.ok) {
+      throw new Error("Error HTTP " + (res && res.status));
     }
     const json = await res.json();
     if (json.files && json.files.length > 0) {
@@ -227,19 +396,18 @@ async function createCrmFile() {
     return;
   }
 
-  const res = await fetch(
+  const res = await driveFetch(
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
     {
       method: "POST",
       headers: {
-        Authorization: "Bearer " + token,
         "Content-Type": "multipart/related; boundary=" + boundary,
       },
       body,
     }
   );
-  if (!res.ok) {
-    console.error("Error al crear archivo:", res.status);
+  if (!res || !res.ok) {
+    console.error("Error al crear archivo:", res && res.status);
     setStatus("No se pudo crear el archivo de CRM.");
     return;
   }
@@ -259,20 +427,14 @@ async function loadCrmData() {
     setStatus("No hay token de sesión.");
     return;
   }
-  const res = await fetch(
-    "https://www.googleapis.com/drive/v3/files/" +
-      crmFileId +
-      "?alt=media",
-    {
-      headers: { Authorization: "Bearer " + token },
-    }
+  const res = await driveFetch(
+    "https://www.googleapis.com/drive/v3/files/" + crmFileId + "?alt=media"
   );
+  if (!res) {
+    setStatus("Error al cargar datos del CRM.");
+    return;
+  }
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      setStatus("Sesión expirada. Vuelve a iniciar sesión.");
-      logout();
-      return;
-    }
     console.error("Error al cargar CRM:", res.status);
     setStatus("Error al cargar datos del CRM.");
     return;
@@ -301,26 +463,27 @@ async function saveCrmData() {
     }
     const json = JSON.stringify(data, null, 2);
 
-    const res = await fetch(
+    const res = await driveFetch(
       "https://www.googleapis.com/upload/drive/v3/files/" +
         crmFileId +
         "?uploadType=media",
       {
         method: "PATCH",
         headers: {
-          Authorization: "Bearer " + token,
           "Content-Type": "application/json",
         },
         body: json,
       }
     );
 
-    if (!res.ok) {
-      throw new Error("Error HTTP " + res.status);
+    if (!res || !res.ok) {
+      throw new Error("Error HTTP " + (res && res.status));
     }
 
     isDirty = false;
     saveBtn.disabled = true;
+
+    clearEncryptedBackup();
 
     alert("✔ Cambios guardados correctamente.");
   } catch (err) {
@@ -640,24 +803,81 @@ fIgnore.addEventListener("change", () => {
 
 addHistoryBtn.addEventListener("click", addHistoryEntry);
 
+if (wipeDeviceBtn) {
+  wipeDeviceBtn.addEventListener("click", () => {
+    const sure = confirm(
+      "Esto borrará el backup cifrado de este navegador.\n" +
+      "Úsalo en PCs públicos o compartidos."
+    );
+    if (!sure) return;
+    clearEncryptedBackup();
+    backupPassword = null;
+    alert("Datos locales borrados de este dispositivo.");
+  });
+}
+
+// Aviso al cerrar pestaña si hay cambios sin guardar
+window.addEventListener("beforeunload", (e) => {
+  if (isDirty) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 // =========================
 // INICIO
 // =========================
 
 window.addEventListener("load", () => {
-  setStatus("Listo. Inicia sesión para cargar tu CRM.");
-  // Esperar a que los scripts de Google se carguen
-  const tryInit = () => {
-    if (window.google && google.accounts && google.accounts.oauth2) {
-      initGoogle();
-    } else {
-      // Reintento ligero
-      setTimeout(() => {
-        if (window.google && google.accounts && google.accounts.oauth2) {
-          initGoogle();
+  (async () => {
+    try {
+      const encrypted = localStorage.getItem(BACKUP_KEY);
+      if (encrypted) {
+        const wantsRestore = confirm(
+          "Hay un backup cifrado de una sesión anterior.\n" +
+          "¿Quieres intentar restaurarlo en este dispositivo?"
+        );
+        if (wantsRestore) {
+          const pwd = prompt("Introduce la contraseña del backup cifrado:");
+          if (!pwd) {
+            alert("No se introdujo contraseña. No se restaurará el backup.");
+          } else {
+            try {
+              const restored = await decryptData(pwd, encrypted);
+              if (restored && Array.isArray(restored.contacts)) {
+                data = restored;
+                isDirty = true;
+                saveBtn.disabled = false;
+                renderContacts();
+                renderSummary();
+                setStatus("Backup cifrado restaurado. No olvides guardar en Google Drive.");
+                backupPassword = pwd;
+              } else {
+                alert("El backup no tiene un formato válido.");
+              }
+            } catch (e) {
+              console.error(e);
+              alert("No se pudo descifrar el backup. ¿Contraseña correcta?");
+            }
+          }
         }
-      }, 1000);
+      }
+    } catch (e) {
+      console.error("Error al manejar backup cifrado:", e);
     }
-  };
-  tryInit();
+
+    setStatus("Listo. Inicia sesión para cargar tu CRM.");
+    const tryInit = () => {
+      if (window.google && google.accounts && google.accounts.oauth2) {
+        initGoogle();
+      } else {
+        setTimeout(() => {
+          if (window.google && google.accounts && google.accounts.oauth2) {
+            initGoogle();
+          }
+        }, 1000);
+      }
+    };
+    tryInit();
+  })();
 });
