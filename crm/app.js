@@ -250,6 +250,7 @@ function login() {
       });
       loginBtn.style.display = "none";
       logoutBtn.style.display = "inline-block";
+      wipeDeviceBtn.style.display = "none";
     },
   }).requestAccessToken();
 }
@@ -272,6 +273,7 @@ function logout() {
   loginBtn.style.display = "inline-block";
   logoutBtn.style.display = "none";
   saveBtn.disabled = true;
+  wipeDeviceBtn.style.display = "none";
 }
 
 async function fetchUserInfo() {
