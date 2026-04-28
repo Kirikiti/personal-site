@@ -816,8 +816,8 @@ if (wipeDeviceBtn) {
     if (!sure) return;
 
     clearEncryptedBackup();
+    localStorage.removeItem(BACKUP_KEY);
     backupPassword = null;
-
     isDirty = false;
     
     alert("Datos locales borrados de este dispositivo.");
@@ -843,7 +843,7 @@ window.addEventListener("load", () => {
     try {
       const encrypted = localStorage.getItem(BACKUP_KEY);
 
-      if (encrypted && !tokenStore.get()) {
+      if (encrypted && encrypted.trim() !== "" && !tokenStore.get()) {
         wipeDeviceBtn.style.display = "inline-block";
       } else {
         wipeDeviceBtn.style.display = "none";
