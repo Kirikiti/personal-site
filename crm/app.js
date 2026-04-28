@@ -778,9 +778,11 @@ logoutBtn.addEventListener("click", logout);
 newContactBtn.addEventListener("click", createNewContact);
 saveBtn.addEventListener("click", saveCrmData);
 deleteBtn.addEventListener("click", deleteCurrentContact);
+
 searchEl.addEventListener("input", () => {
   renderContacts();
 });
+
 urgencyFilterEl.addEventListener("change", () => {
   renderContacts();
 });
@@ -812,19 +814,23 @@ if (wipeDeviceBtn) {
       "Úsalo en PCs públicos o compartidos."
     );
     if (!sure) return;
+
     clearEncryptedBackup();
     backupPassword = null;
+
     alert("Datos locales borrados de este dispositivo.");
+    
+    wipeDeviceBtn.style.display = "none";
   });
 }
 
-// Aviso al cerrar pestaña si hay cambios sin guardar
 window.addEventListener("beforeunload", (e) => {
   if (isDirty) {
     e.preventDefault();
     e.returnValue = "";
   }
 });
+
 
 // =========================
 // INICIO
