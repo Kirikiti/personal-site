@@ -818,6 +818,8 @@ if (wipeDeviceBtn) {
     clearEncryptedBackup();
     backupPassword = null;
 
+    isDirty = false;
+    
     alert("Datos locales borrados de este dispositivo.");
     
     wipeDeviceBtn.style.display = "none";
